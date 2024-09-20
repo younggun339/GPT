@@ -1,4 +1,4 @@
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
@@ -7,6 +7,8 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
+from langchain.callbacks import StdOutCallbackHandler
+from langchain.memory import ConversationSummaryBufferMemory
 import streamlit as st
 
 st.set_page_config(
@@ -36,7 +38,16 @@ llm = ChatOpenAI(
         ChatCallbackHandler(),
     ],
 )
+# MemoryHandler = StdOutCallbackHandler()
 
+memory = ConversationSummaryBufferMemory(
+    llm=llm,
+    max_token_limit=120,
+    return_messages=True,
+    # callbacks=[
+    #     MemoryHandler,
+    # ],
+)
 
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
@@ -82,6 +93,12 @@ def paint_history():
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
+def load_memory(_):
+    # if 'chat_history' not in st.session_state:
+    #     st.session_state.chat_history = []
+    return memory.load_memory_variables({})["chat_history"]
+
+
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -93,6 +110,7 @@ prompt = ChatPromptTemplate.from_messages(
             Context: {context}
             """,
         ),
+        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{question}"),
     ]
 )
@@ -124,15 +142,18 @@ if file:
     if message:
         send_message(message, "human")
         chain = (
+            RunnablePassthrough.assign({"chat_history" :load_memory}) |
             {
                 "context": retriever | RunnableLambda(format_docs),
                 "question": RunnablePassthrough(),
             }
             | prompt
             | llm
+            # | RunnableLambda(lambda response: memory.save_context({"question": response["question"]}, {"answer": response["answer"]}) or response["answer"])
         )
         with st.chat_message("ai"):
-            chain.invoke(message)
+            result = chain.invoke(message)
+            memory.save_context({"question":message}, {"answer":result.content})
 
 
 else:
