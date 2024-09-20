@@ -28,15 +28,22 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message += token
         self.message_box.markdown(self.message)
 
+# @st.cache_data
+# def naming_model():
+#     chosenModel = "mistral:latest"
+#     return chosenModel
 
-llm = ChatOllama(
-    model="mistral:latest",
-    temperature=0.1,
-    streaming=True,
-    callbacks=[
-        ChatCallbackHandler(),
-    ],
-)
+# chosenModel = naming_model()
+
+def create_llm(model):
+    return ChatOllama(
+        model=model,
+        temperature=0.1,
+        streaming=True,
+        callbacks=[
+            ChatCallbackHandler(),
+        ],
+    )
 
 
 @st.cache_data(show_spinner="Embedding file...")
@@ -53,7 +60,7 @@ def embed_file(file):
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OllamaEmbeddings(model="mistral:latest")
+    embeddings = OllamaEmbeddings(model=st.session_state.chosenModel)
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
     retriever = vectorstore.as_retriever()
@@ -110,6 +117,13 @@ with st.sidebar:
         "Upload a .txt .pdf or .docx file",
         type=["pdf", "txt", "docx"],
     )
+    chosenModel = st.selectbox("원하는 모델을 선택하세요.", ("mistral:latest", "llama3.1"),
+                 placeholder="모델 선택 중...")
+    
+    # 모델이 변경될 때 llm 업데이트
+    if "llm" not in st.session_state or st.session_state.chosenModel != chosenModel:
+        st.session_state.llm = create_llm(chosenModel)
+        st.session_state.chosenModel = chosenModel
 
 if file:
     retriever = embed_file(file)
@@ -124,7 +138,7 @@ if file:
                 "question": RunnablePassthrough(),
             }
             | prompt
-            | llm
+            | st.session_state.llm
         )
         with st.chat_message("ai"):
             chain.invoke(message)

@@ -40,7 +40,7 @@ llm = ChatOpenAI(
 )
 # MemoryHandler = StdOutCallbackHandler()
 
-@st.cache_resource
+@st.cache_data
 def get_memory():
     return ConversationSummaryBufferMemory(
         llm=ChatOpenAI(temperature=0.1),
