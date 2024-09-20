@@ -7,15 +7,42 @@ import glob
 import openai
 import os
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import StrOutputParser
 from langchain.vectorstores.faiss import FAISS
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+from langchain.memory import ConversationSummaryBufferMemory
+
+st.set_page_config(
+    page_title="MeetingGPT",
+    page_icon="💼",
+)
+
+class ChatCallbackHandler(BaseCallbackHandler):
+    message = ""
+
+    def on_llm_start(self, *args, **kwargs):
+        self.message_box = st.empty()
+
+    def on_llm_end(self, *args, **kwargs):
+        save_message(self.message, "ai")
+
+    def on_llm_new_token(self, token, *args, **kwargs):
+        self.message += token
+        self.message_box.markdown(self.message)
+
+
 
 llm = ChatOpenAI(
     temperature=0.1,
+    streaming=True,
+    callbacks=[
+        ChatCallbackHandler(),
+    ],
 )
 
 has_transcript = os.path.exists("./.cache/podcast.txt")
@@ -89,11 +116,36 @@ def cut_audio_in_chunks(audio_path, chunk_size, chunks_folder):
             format="mp3",
         )
 
+@st.cache_data
+def get_memory():
+    return ConversationSummaryBufferMemory(
+        llm=ChatOpenAI(temperature=0.1),
+        max_token_limit=120,
+        return_messages=True,
+    )
 
-st.set_page_config(
-    page_title="MeetingGPT",
-    page_icon="💼",
-)
+memory = get_memory()
+
+def save_message(message, role):
+    st.session_state["messages"].append({"message": message, "role": role})
+
+def send_message(message, role, save=True):
+    with st.chat_message(role):
+        st.markdown(message)
+    if save:
+        save_message(message, role)
+
+
+def paint_history():
+    for message in st.session_state["messages"]:
+        send_message(
+            message["message"],
+            message["role"],
+            save=False,
+        )
+
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
 
 st.markdown(
     """
@@ -105,11 +157,17 @@ Get started by uploading a video file in the sidebar.
 """
 )
 
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = "Transcript"
+
+
 with st.sidebar:
     video = st.file_uploader(
         "Video",
         type=["mp4", "avi", "mkv", "mov"],
     )
+
+
 
 if video:
     chunks_folder = "./.cache/chunks"
@@ -135,11 +193,15 @@ if video:
         ]
     )
 
+    active_tab = st.session_state.get("active_tab", "Transcript") 
+
     with transcript_tab:
+        st.session_state["active_tab"] = "Transcript"
         with open(transcript_path, "r") as file:
             st.write(file.read())
 
     with summary_tab:
+        st.session_state["active_tab"] = "Summary"
         start = st.button("Generate summary")
         if start:
             loader = TextLoader(transcript_path)
@@ -188,8 +250,49 @@ if video:
             st.write(summary)
 
     with qa_tab:
+        st.session_state["active_tab"] = "Q&A"
         retriever = embed_file(transcript_path)
 
-        docs = retriever.invoke("do they talk about marcus aurelius?")
+        # docs = retriever.invoke("do they talk about marcus aurelius?")
 
-        st.write(docs)
+        qa_prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """
+                    Answer the question using ONLY the following context and conversation history. If you don't know the answer, just say you don't know. DON'T make anything up.
+                    
+                    Context: {context}
+                    Conversation History: {history}
+                    """,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{question}"),
+            ]
+        )
+
+        # st.write(docs)
+        send_message("준비됐어요! 물어보세요!", "ai", save=False)
+        paint_history()
+if st.session_state["active_tab"] == "Q&A":
+    message = st.chat_input("영상에 관해 궁금한걸 물어보세요...")
+    if message:
+        send_message(message, "human")
+        qa_chain = (
+            {
+                "context": retriever | RunnableLambda(format_docs),
+                "question": RunnablePassthrough(),
+                "history" : RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
+            }
+            | qa_prompt
+            | llm
+        )
+        with st.chat_message("ai"):
+            result = qa_chain.invoke(message)
+            memory.save_context(
+                {"input": message},
+                {"output": result.content},
+            )
+
+else:
+    st.session_state["messages"] = []
