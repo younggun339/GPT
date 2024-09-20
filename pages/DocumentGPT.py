@@ -48,6 +48,7 @@ def get_memory():
         return_messages=True,
     )
 
+
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
     file_content = file.read()
@@ -112,7 +113,7 @@ prompt = ChatPromptTemplate.from_messages(
 #     print("History:", history)  # 디버깅을 위한 출력
 #     return history
 
-
+memory = get_memory()
 
 st.title("DocumentGPT")
 
