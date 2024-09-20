@@ -1,4 +1,5 @@
-from langchain.document_loaders import SitemapLoader
+from langchain.document_loaders import SitemapLoader, AsyncChromiumLoader
+from langchain.document_transformers import Html2TextTransformer
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
@@ -6,6 +7,8 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import streamlit as st
+
+html2text_transformer = Html2TextTransformer()
 
 llm = ChatOpenAI(
     temperature=0.1,
@@ -57,8 +60,8 @@ def get_answers(inputs):
                 "answer": answers_chain.invoke(
                     {"question": question, "context": doc.page_content}
                 ).content,
-                "source": doc.metadata["source"],
-                "date": doc.metadata["lastmod"],
+                # "source": doc.metadata["source"],
+                # "date": doc.metadata["lastmod"],
             }
             for doc in docs
         ],
