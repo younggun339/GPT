@@ -40,14 +40,13 @@ llm = ChatOpenAI(
 )
 # MemoryHandler = StdOutCallbackHandler()
 
-memory = ConversationSummaryBufferMemory(
-    llm=llm,
-    max_token_limit=120,
-    return_messages=True,
-    # callbacks=[
-    #     MemoryHandler,
-    # ],
-)
+@st.cache_resource
+def get_memory():
+    return ConversationSummaryBufferMemory(
+        llm=ChatOpenAI(temperature=0.1),
+        max_token_limit=120,
+        return_messages=True,
+    )
 
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
@@ -108,10 +107,10 @@ prompt = ChatPromptTemplate.from_messages(
         ("human", "{question}"),
     ]
 )
-def load_memory(_):
-    history = memory.load_memory_variables({})["history"]
-    print("History:", history)  # 디버깅을 위한 출력
-    return history
+# def load_memory(_):
+#     history = memory.load_memory_variables({})["history"]
+#     print("History:", history)  # 디버깅을 위한 출력
+#     return history
 
 
 
@@ -144,7 +143,7 @@ if file:
             {
                 "context": retriever | RunnableLambda(format_docs),
                 "question": RunnablePassthrough(),
-                "history" : load_memory,
+                "history" : RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
             }
             | prompt
             | llm
@@ -152,7 +151,17 @@ if file:
         )
         with st.chat_message("ai"):
             result = chain.invoke(message)
-            memory.save_context({"question":message}, {"answer":result.content})
+            memory.save_context(
+                {"input": message},
+                {"output": result.content},
+            )
+            print(result)
+            print(result.content)
+            print(message)
+            print("Current Memory Context:")
+            for msg in memory.chat_memory.messages:
+                print(f"{msg.type}: {msg.content}")
+            print(memory.load_memory_variables({})["history"])
 
 
 else:
