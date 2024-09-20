@@ -227,10 +227,11 @@ if video:
         status.update(label="Transcribing audio...")
         transcribe_chunks(chunks_folder, transcript_path)
 
-    transcript_tab, summary_tab = st.tabs(
+    transcript_tab, summary_tab, qa_tab = st.tabs(
         [
             "Transcript",
             "Summary",
+            "Q&A",
         ]
     )
 
@@ -254,50 +255,51 @@ if video:
             st.write(summary)
             
 
-
+    with qa_tab:
         # docs = retriever.invoke("do they talk about marcus aurelius?")
+            qa_prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """
+                    Answer the question using ONLY the following context and conversation history. If you don't know the answer, just say you don't know. DON'T make anything up.
+                    
+                    Context: {context}
+                    Conversation History: {history}
+                    """,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{question}"),
+            ]
+        )
 
-qa_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
-            Answer the question using ONLY the following context and conversation history. If you don't know the answer, just say you don't know. DON'T make anything up.
-            
-            Context: {context}
-            Conversation History: {history}
-            """,
-        ),
-        MessagesPlaceholder(variable_name="history"),
-        ("human", "{question}"),
-    ]
-)
+            retriever = embed_file(transcript_path)
+
+            send_message("준비됐어요! 물어보세요!", "ai", save=False)
+            paint_history()
 
    # Now move the Q&A section outside of tabs
 
-if st.session_state["transcript_path"]:
-    retriever = embed_file(transcript_path)
 
-    send_message("준비됐어요! 물어보세요!", "ai", save=False)
-    paint_history()
 
-    message = st.chat_input("영상에 관해 궁금한걸 물어보세요...")
-    if message:
-        send_message(message, "human")
-        qa_chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "question": RunnablePassthrough(),
-                "history": RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
-            }
-            | qa_prompt
-            | llm
+message = st.chat_input("영상에 관해 궁금한걸 물어보세요...")
+if message:
+    send_message(message, "human")
+    qa_chain = (
+        {
+            "context": retriever | RunnableLambda(format_docs),
+            "question": RunnablePassthrough(),
+            "history": RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
+        }
+        | qa_prompt
+        | llm
+    )
+    with st.chat_message("ai"):
+        result = qa_chain.invoke(message)
+        memory.save_context(
+            {"input": message},
+            {"output": result.content},
         )
-        with st.chat_message("ai"):
-            result = qa_chain.invoke(message)
-            memory.save_context(
-                {"input": message},
-                {"output": result.content},
-            )
+        print(memory.load_memory_variables({})["history"])
 else:
     st.session_state["messages"] = []
