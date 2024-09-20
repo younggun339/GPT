@@ -157,8 +157,8 @@ Get started by uploading a video file in the sidebar.
 """
 )
 
-if "active_tab" not in st.session_state:
-    st.session_state["active_tab"] = "Transcript"
+if "transcript_path" not in st.session_state:
+    st.session_state["transcript_path"] = ""
 
 
 with st.sidebar:
@@ -176,6 +176,7 @@ if video:
         video_path = f"./.cache/{video.name}"
         audio_path = video_path.replace("mp4", "mp3")
         transcript_path = video_path.replace("mp4", "txt")
+        st.session_state["transcript_path"]= transcript_path
         with open(video_path, "wb") as f:
             f.write(video_content)
         status.update(label="Extracting audio...")
@@ -185,23 +186,21 @@ if video:
         status.update(label="Transcribing audio...")
         transcribe_chunks(chunks_folder, transcript_path)
 
-    transcript_tab, summary_tab, qa_tab = st.tabs(
+    transcript_tab, summary_tab = st.tabs(
         [
             "Transcript",
             "Summary",
-            "Q&A",
         ]
     )
 
-    active_tab = st.session_state.get("active_tab", "Transcript") 
-
+  
     with transcript_tab:
-        st.session_state["active_tab"] = "Transcript"
+
         with open(transcript_path, "r") as file:
             st.write(file.read())
+            
 
     with summary_tab:
-        st.session_state["active_tab"] = "Summary"
         start = st.button("Generate summary")
         if start:
             loader = TextLoader(transcript_path)
@@ -246,35 +245,36 @@ if video:
                             "context": doc.page_content,
                         }
                     )
-                    st.write(summary)
-            st.write(summary)
+                st.write(summary)
+            
 
-    with qa_tab:
-        st.session_state["active_tab"] = "Q&A"
-        retriever = embed_file(transcript_path)
 
         # docs = retriever.invoke("do they talk about marcus aurelius?")
 
-        qa_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """
-                    Answer the question using ONLY the following context and conversation history. If you don't know the answer, just say you don't know. DON'T make anything up.
-                    
-                    Context: {context}
-                    Conversation History: {history}
-                    """,
-                ),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", "{question}"),
-            ]
-        )
+qa_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            Answer the question using ONLY the following context and conversation history. If you don't know the answer, just say you don't know. DON'T make anything up.
+            
+            Context: {context}
+            Conversation History: {history}
+            """,
+        ),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{question}"),
+    ]
+)
 
-        # st.write(docs)
-        send_message("준비됐어요! 물어보세요!", "ai", save=False)
-        paint_history()
-if st.session_state["active_tab"] == "Q&A":
+   # Now move the Q&A section outside of tabs
+
+if st.session_state["transcript_path"]:
+    retriever = embed_file(transcript_path)
+
+    send_message("준비됐어요! 물어보세요!", "ai", save=False)
+    paint_history()
+
     message = st.chat_input("영상에 관해 궁금한걸 물어보세요...")
     if message:
         send_message(message, "human")
@@ -282,7 +282,7 @@ if st.session_state["active_tab"] == "Q&A":
             {
                 "context": retriever | RunnableLambda(format_docs),
                 "question": RunnablePassthrough(),
-                "history" : RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
+                "history": RunnableLambda(lambda _: memory.load_memory_variables({})["history"]),
             }
             | qa_prompt
             | llm
@@ -293,6 +293,5 @@ if st.session_state["active_tab"] == "Q&A":
                 {"input": message},
                 {"output": result.content},
             )
-
 else:
     st.session_state["messages"] = []
