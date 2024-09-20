@@ -116,6 +116,47 @@ def cut_audio_in_chunks(audio_path, chunk_size, chunks_folder):
             format="mp3",
         )
 
+@st.cache_data  # Caching the summary
+def generate_summary(_docs):
+    # First summarization step
+    first_summary_prompt = ChatPromptTemplate.from_template(
+        """
+        Write a concise summary of the following:
+        "{text}"
+        CONCISE SUMMARY:                
+        """
+    )
+    first_summary_chain = first_summary_prompt | llm | StrOutputParser()
+
+    summary = first_summary_chain.invoke(
+        {"text": docs[0].page_content},
+    )
+
+    # Refine summary for subsequent documents
+    refine_prompt = ChatPromptTemplate.from_template(
+        """
+        Your job is to produce a final summary.
+        We have provided an existing summary up to a certain point: {existing_summary}
+        We have the opportunity to refine the existing summary (only if needed) with some more context below.
+        ------------
+        {context}
+        ------------
+        Given the new context, refine the original summary.
+        If the context isn't useful, RETURN the original summary.
+        """
+    )
+    refine_chain = refine_prompt | llm | StrOutputParser()
+
+    for i, doc in enumerate(docs[1:]):
+        summary = refine_chain.invoke(
+            {
+                "existing_summary": summary,
+                "context": doc.page_content,
+            }
+        )
+    return summary
+
+
 @st.cache_data
 def get_memory():
     return ConversationSummaryBufferMemory(
@@ -203,49 +244,14 @@ if video:
     with summary_tab:
         start = st.button("Generate summary")
         if start:
+
             loader = TextLoader(transcript_path)
-
             docs = loader.load_and_split(text_splitter=splitter)
-
-            first_summary_prompt = ChatPromptTemplate.from_template(
-                """
-                Write a concise summary of the following:
-                "{text}"
-                CONCISE SUMMARY:                
-            """
-            )
-
-            first_summary_chain = first_summary_prompt | llm | StrOutputParser()
-
-            summary = first_summary_chain.invoke(
-                {"text": docs[0].page_content},
-            )
-
-            refine_prompt = ChatPromptTemplate.from_template(
-                """
-                Your job is to produce a final summary.
-                We have provided an existing summary up to a certain point: {existing_summary}
-                We have the opportunity to refine the existing summary (only if needed) with some more context below.
-                ------------
-                {context}
-                ------------
-                Given the new context, refine the original summary.
-                If the context isn't useful, RETURN the original summary.
-                """
-            )
-
-            refine_chain = refine_prompt | llm | StrOutputParser()
-
+            
             with st.status("Summarizing...") as status:
-                for i, doc in enumerate(docs[1:]):
-                    status.update(label=f"Processing document {i+1}/{len(docs)-1} ")
-                    summary = refine_chain.invoke(
-                        {
-                            "existing_summary": summary,
-                            "context": doc.page_content,
-                        }
-                    )
+                summary = generate_summary(docs)  # Cached function is called
                 st.write(summary)
+            st.write(summary)
             
 
 
