@@ -22,13 +22,14 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box = st.empty()
 
     def on_llm_end(self, *args, **kwargs):
-        save_message(self.message, "ai")
+        save_message(self.message, "ai", st.session_state.chosenModel)
 
     def on_llm_new_token(self, token, *args, **kwargs):
         self.message += token
         self.message_box.markdown(self.message)
 
 def create_llm(model):
+    print(f"it is {model}!")
     return ChatOllama(
         model=model,
         temperature=0.1,
@@ -136,8 +137,10 @@ if file:
             | prompt
             | st.session_state.llm
         )
+        print(message)
         with st.chat_message("ai"):
             chain.invoke(message)
+            st.caption(st.session_state.chosenModel)
 
 
 else:
