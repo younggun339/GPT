@@ -93,12 +93,6 @@ def paint_history():
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
-def load_memory(_):
-    # if 'chat_history' not in st.session_state:
-    #     st.session_state.chat_history = []
-    return memory.load_memory_variables({})["chat_history"]
-
-
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -110,10 +104,15 @@ prompt = ChatPromptTemplate.from_messages(
             Context: {context}
             """,
         ),
-        MessagesPlaceholder(variable_name="chat_history"),
+        MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ]
 )
+def load_memory(_):
+    history = memory.load_memory_variables({})["history"]
+    print("History:", history)  # 디버깅을 위한 출력
+    return history
+
 
 
 st.title("DocumentGPT")
@@ -142,10 +141,10 @@ if file:
     if message:
         send_message(message, "human")
         chain = (
-            RunnablePassthrough.assign({"chat_history" :load_memory}) |
             {
                 "context": retriever | RunnableLambda(format_docs),
                 "question": RunnablePassthrough(),
+                "history" : load_memory,
             }
             | prompt
             | llm
