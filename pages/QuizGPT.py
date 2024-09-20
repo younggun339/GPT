@@ -230,6 +230,27 @@ def wiki_search(term):
     docs = retriever.get_relevant_documents(term)
     return docs
 
+def text_parser():
+    return 
+
+descript_prompt = ChatPromptTemplate.from_messages( [
+        (
+            "system",
+            """
+
+{response}
+{context}
+""",
+        )
+    ])
+
+descript_chain = descript_prompt | llm
+
+@st.cache_data(show_spinner="Making description...")
+def run_descript_chain(_docs, topic, _response):
+    explain_chain = {"Quiz" : _response, "context" : _docs} | descript_chain | llm
+    return explain_chain.invoke({"docs": _docs, "response": _response})
+
 
 with st.sidebar:
     docs = None
