@@ -28,13 +28,6 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message += token
         self.message_box.markdown(self.message)
 
-# @st.cache_data
-# def naming_model():
-#     chosenModel = "mistral:latest"
-#     return chosenModel
-
-# chosenModel = naming_model()
-
 def create_llm(model):
     return ChatOllama(
         model=model,
@@ -67,15 +60,17 @@ def embed_file(file):
     return retriever
 
 
-def save_message(message, role):
-    st.session_state["messages"].append({"message": message, "role": role})
+def save_message(message, role,model):
+    st.session_state["messages"].append({"message": message, "role": role, "model":model})
 
 
-def send_message(message, role, save=True):
+def send_message(message, role, model, save=True):
     with st.chat_message(role):
         st.markdown(message)
+        if role == "ai":
+            st.caption(model)
     if save:
-        save_message(message, role)
+        save_message(message, role, model)
 
 
 def paint_history():
@@ -83,6 +78,7 @@ def paint_history():
         send_message(
             message["message"],
             message["role"],
+            message["model"],
             save=False,
         )
 
@@ -127,11 +123,11 @@ with st.sidebar:
 
 if file:
     retriever = embed_file(file)
-    send_message("I'm ready! Ask away!", "ai", save=False)
+    send_message("I'm ready! Ask away!", "ai", st.session_state.chosenModel, save=False)
     paint_history()
     message = st.chat_input("Ask anything about your file...")
     if message:
-        send_message(message, "human")
+        send_message(message, "human", st.session_state.chosenModel)
         chain = (
             {
                 "context": retriever | RunnableLambda(format_docs),
