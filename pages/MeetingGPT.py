@@ -165,7 +165,11 @@ def get_memory():
         return_messages=True,
     )
 
-memory = get_memory()
+# Initialize memory in session state
+if "memory" not in st.session_state:
+    st.session_state["memory"] = get_memory()
+
+memory = st.session_state["memory"]
 
 def save_message(message, role):
     st.session_state["messages"].append({"message": message, "role": role})
@@ -284,6 +288,8 @@ if video:
 
 message = st.chat_input("영상에 관해 궁금한걸 물어보세요...")
 if message:
+    history = memory.load_memory_variables({})["history"]
+    print(history)
     send_message(message, "human")
     qa_chain = (
         {
@@ -300,6 +306,8 @@ if message:
             {"input": message},
             {"output": result.content},
         )
+        st.session_state["memory"] = memory
+        print(result.content)
         print(memory.load_memory_variables({})["history"])
 else:
     st.session_state["messages"] = []
