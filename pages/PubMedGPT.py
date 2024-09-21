@@ -7,6 +7,7 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import streamlit as st
+import json
 
 
 import pandas as pd
@@ -21,7 +22,10 @@ import datetime
 llm = ChatOpenAI(
     temperature=0.1,
 )
-
+st.set_page_config(
+    page_title="PubMedGPT",
+    page_icon="🖥️",
+)
 answers_prompt = ChatPromptTemplate.from_template(
     """
     Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
@@ -307,17 +311,22 @@ def output_parser(df, topics):
         output.append(group_data)
     return output
 
-# topics = []
-# for i in range(k):
-#   abstracts = ""
-#   for _, row in df[df['Group']==i].iterrows():
-#     abstracts += f"- {row['Summary'].strip()}\n"
-#   topics.append(get_topic(abstracts))
 
-st.set_page_config(
-    page_title="PubMedGPT",
-    page_icon="🖥️",
-)
+final_prompt = ChatPromptTemplate.from_messages(
+    [("system", 
+      """
+"The following are short descriptions of scientific articles. 
+                                                  Write a brief summary of each group, and perform comparative analysis of the groups. 
+                                                  Make a summary table with the columns `Group`, `Topic`, `Characteristics`."""), 
+                                                 ("user", """{context}""")])
+
+@st.cache_data(show_spinner="Making result...")
+def get_explain(parsed_output):
+    explain_chain = final_prompt | llm
+    text= json.dumps(parsed_output)
+    return explain_chain.invoke({"context" : text})
+
+
 
 
 st.markdown(
@@ -357,16 +366,21 @@ if keyword:
         if start:
             df = get_summary(keyword, number)
             last_df, topics = get_topic(df, k)
-            print(last_df)
-            print(topics)
+            # print(last_df)
+            # print(topics)
             parsed_output = output_parser(last_df, topics)
-            print(parsed_output)
+            print(f"paresed_output : {parsed_output}")
+            print(type(parsed_output))
+            answer = get_explain(parsed_output)
+            print(answer)
+            st.write(answer.content)
+            # print(parsed_output)
              # Streamlit을 사용하여 결과 표시
-            for group in parsed_output:
-                st.subheader(f"Group {group['Group']}: {group['Topic']}")
-                for paper in group['Papers']:
-                    st.write(f"- ({paper['Author']}, {paper['Year']}) {paper['Summary']}")
-                st.write("---")
+            # for group in parsed_output:
+            #     st.subheader(f"Group {group['Group']}: {group['Topic']}")
+            #     for paper in group['Papers']:
+            #         st.write(f"- ({paper['Author']}, {paper['Year']}) {paper['Summary']}")
+            #     st.write("---")
 
     with qa_tab:
         st.button("아무거나.")
