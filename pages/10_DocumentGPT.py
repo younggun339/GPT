@@ -119,14 +119,15 @@ st.title("DocumentGPT")
 
 st.markdown(
     """
-Welcome!
-            
-Use this chatbot to ask questions to an AI about your files!
+### 📚 문서 분석 챗봇
 
-Upload your files on the sidebar.
-"""
+사이드바에 다음 정보를 입력하세요:
+1. 표기된 확장자의 파일
+
+궁금한 점이 있으시면 언제든 물어보세요. 
+함께 문서를 탐험해봐요! 🚀
+    """
 )
-
 with st.sidebar:
     file = st.file_uploader(
         "Upload a .txt .pdf or .docx file",

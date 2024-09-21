@@ -194,11 +194,21 @@ def format_docs(docs):
 
 st.markdown(
     """
-# MeetingGPT
-            
-Welcome to MeetingGPT, upload a video and I will give you a transcript, a summary and a chat bot to ask any questions about it.
+## 💼 MeetingGPT
 
-Get started by uploading a video file in the sidebar.
+### 📹 비디오 분석 챗봇
+
+영상의 대화 내용을 보지 않고 요약해보세요!
+
+사이드바에 다음 정보를 입력하세요:
+1. 📹 비디오
+
+이러한 기능을 이용할 수 있습니다:
+- 📝 대본 생성
+- 📊 요약 제공
+- 💬 내용에 관한 Q&A 챗봇
+
+그럼 시작해볼까요? 🚀
 """
 )
 

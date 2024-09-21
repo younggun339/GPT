@@ -274,14 +274,21 @@ with st.sidebar:
 
 if not docs:
     st.markdown(
-        """
-    Welcome to QuizGPT.
-                
-    I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
-                
-    Get started by uploading a file or searching on Wikipedia in the sidebar.
     """
-    )
+    ## 🎓 퀴즈 챗봇
+
+
+    다음 자료로 퀴즈를 만들어 드립니다:
+    - 🌐 위키피디아 문서
+    - 📁 업로드하신 파일
+
+    사이드바에 다음 정보를 입력하세요:
+    1. 파일 업로드하기 📤 또는
+    2. 위키피디아에서 검색하기 🔍
+    
+    함께 학습 여정을 시작해볼까요? 🚀
+    """
+)
 else:
     response = run_quiz_chain(docs, topic if topic else file.name)
     with st.form("questions_form"):

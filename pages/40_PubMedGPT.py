@@ -111,7 +111,7 @@ def choose_answer(inputs):
     )
 
 
-@st.cache_data(show_spinner="Creating vector store...")
+@st.cache_data(show_spinner="벡터 저장소 생성중...")
 def create_vector_store_QA(df):
     # OpenAI 임베딩 함수 정의
     embeddings = OpenAIEmbeddings()
@@ -121,9 +121,9 @@ def create_vector_store_QA(df):
 
     # DataFrame의 'Summary' 열에 임베딩 적용
     if 'Embeddings_Ab' not in df.columns:
-        with st.spinner("Generating embeddings..."):
+        with st.spinner("임베딩 중..."):
             df['Embeddings_Ab'] = df['Abstract'].progress_apply(get_embedding)
-        st.success("Embeddings generated successfully!")
+        st.success("임베딩 성공!")
 
     # 텍스트 분할기 설정
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
@@ -148,7 +148,7 @@ def create_vector_store_QA(df):
     return vector_store.as_retriever()
 
 
-@st.cache_data(show_spinner="Searching Document....")
+@st.cache_data(show_spinner="문서 탐색 중....")
 def search_pubmed(keyword, retmax=10):
     handle = Entrez.esearch(db="pubmed", term=keyword, retmax=retmax)
     record = Entrez.read(handle)
@@ -212,7 +212,7 @@ You are a research assistant, and will be provided with an abstract of a scienti
 """),("user", """{context}
 """)])
 
-@st.cache_data(show_spinner="Genarating Summary...")
+# @st.cache_data(show_spinner="Genarating Summary...")
 def get_summary(keyword, numbers):
     search_results = search_pubmed(keyword, numbers)
     df = pd.DataFrame(search_results)
@@ -229,11 +229,7 @@ def get_summary(keyword, numbers):
     return df
 
 
-# df['Summary'] = df['Abstract'].progress_apply(get_summary)
-# df
-
-
-@st.cache_data(show_spinner="Embedding summary...")
+# @st.cache_data(show_spinner="Embedding summary...")
 def embedding_summary(df):
     # OpenAI 임베딩 함수 정의
     embeddings = OpenAIEmbeddings()
@@ -243,22 +239,23 @@ def embedding_summary(df):
 
     # DataFrame의 'Summary' 열에 임베딩 적용
     if 'Embeddings_Sum' not in df.columns:
-        with st.spinner("Generating embeddings..."):
+        with st.spinner("임베딩 중..."):
             df['Embeddings_Sum'] = df['Summary'].progress_apply(get_embedding_topic)
-        st.success("Embeddings generated successfully!")
+        st.success("임베딩 성공!")
 
 
     return df
 
-@st.cache_data(show_spinner="Reduce demension...")
+# @st.cache_data(show_spinner="Reduce demension...")
 def reduce_demension(df):
     reducer = umap.UMAP(n_neighbors=3, n_components=3)
+
     u = reducer.fit_transform(df['Embeddings_Sum'].tolist())
     return u
 
-@st.cache_data(show_spinner="Clustering...")
+# @st.cache_data(show_spinner="Clustering...")
 def cluster(k, u, df):
-    k = int(k) 
+    k = int(k)     
     kmeans = KMeans(n_clusters=k, n_init=10)
     kmeans.fit(u)
     labels = kmeans.labels_
@@ -271,11 +268,17 @@ topic_prompt = ChatPromptTemplate.from_messages([
     ("user", """{context}""")
 ])
 
-@st.cache_data(show_spinner="Getting Topic...")
+# @st.cache_data(show_spinner="Getting Topic...")
 def get_topic(_df, k):
     k = int(k)
     data = embedding_summary(_df)
     u = reduce_demension(data)
+
+    n_samples = u.shape[0]
+    if k > n_samples:
+        st.error(f"Error: Number of clusters (k={k}) is greater than the number of data points ({n_samples}). Please choose a smaller value for k.")
+        return None
+
     last_df = cluster(k, u, data)
     topic_chain = topic_prompt | llm
     print(f"df : {last_df}")
@@ -320,74 +323,78 @@ final_prompt = ChatPromptTemplate.from_messages(
                                                   Make a summary table with the columns `Group`, `Topic`, `Characteristics`."""), 
                                                  ("user", """{context}""")])
 
-@st.cache_data(show_spinner="Making result...")
 def get_explain(parsed_output):
     explain_chain = final_prompt | llm
     text= json.dumps(parsed_output)
     return explain_chain.invoke({"context" : text})
 
 
+def validate_number(value):
+    try:
+        num = int(value)
+        return num > 3
+    except ValueError:
+        return False
 
+st.title("PubMedGPT")
 
 st.markdown(
     """
-    # PubMedGPT
-            
-    Ask questions about the content of a website.
-            
-    Start by writing the URL of the website on the sidebar.
+### 📚 의학 연구 트렌드 분석 챗봇
+
+관심 있는 의학 주제의 현재 트렌드를 확인해보세요!
+
+사이드바에 다음 정보를 입력하세요:
+1. 🔑 키워드
+2. 🔢 검색할 문서 수
+3. 📊 클러스터링 수
+
+입력하신 정보를 바탕으로 최신 연구 동향을 분석해 드립니다.
+챗봇으로 간단한 내용도 질문해보세요!
 """
 )
 
-
 with st.sidebar:
     keyword = st.text_input(
-        "Write down a Keyword",
+        "키워드를 입력하세요.",
         placeholder="ex) DNA, MS...",
     )
-    number = st.text_input(
-        "Write down a number",
-        placeholder="ex) 5, 10, 15..."
+    number_container = st.empty()
+    number = number_container.text_input(
+        "숫자를 입력하세요. (최소 4 이상)",
+        placeholder="ex) 5, 10, 15...",
+        key="number_input"
     )
-    k = st.text_input("Write down a clustering number",
+    if number:
+        if not validate_number(number):
+            st.error("3보다 큰 숫자를 입력해주세요..")
+            st.stop()
+    
+
+    k = st.text_input("클러스터링 숫자를 입력해주세요.",
                             placeholder="ex) 1, 2...")
-
-
 if keyword:
     # df = get_summary(keyword, number)
-    summary_tab, qa_tab = st.tabs(
-        [
-            "Summary",
-            "Q&A",
-        ]
-    )
-    with summary_tab:
-        start = st.button("Genrate summary")
-        if start:
-            df = get_summary(keyword, number)
-            last_df, topics = get_topic(df, k)
-            # print(last_df)
-            # print(topics)
-            parsed_output = output_parser(last_df, topics)
-            print(f"paresed_output : {parsed_output}")
-            print(type(parsed_output))
-            answer = get_explain(parsed_output)
-            print(answer)
-            st.write(answer.content)
-            # print(parsed_output)
-             # Streamlit을 사용하여 결과 표시
-            # for group in parsed_output:
-            #     st.subheader(f"Group {group['Group']}: {group['Topic']}")
-            #     for paper in group['Papers']:
-            #         st.write(f"- ({paper['Author']}, {paper['Year']}) {paper['Summary']}")
-            #     st.write("---")
 
-    with qa_tab:
-        st.button("아무거나.")
-    # search_results = search_pubmed(keyword, number)
-    # df = pd.DataFrame(search_results)
-    # retriever = create_vector_store(df)
-query = st.text_input("Ask a question to the website.")
+
+    start = st.button("주제 분석하기")
+    if start:
+        df = get_summary(keyword, number)
+        result = get_topic(df, k)
+    
+        if result is None:
+        # Error has already been displayed by get_topic function
+            st.stop()  # Stop further execution
+    
+        last_df, topics = result
+        parsed_output = output_parser(last_df, topics)
+        print(f"paresed_output : {parsed_output}")
+        print(type(parsed_output))
+        answer = get_explain(parsed_output)
+        print(answer)
+        st.write(answer.content)
+
+query = st.text_input("해당 키워드로 궁금한걸 물어보세요.")
 if query: 
     search_results = search_pubmed(keyword, number)
     df = pd.DataFrame(search_results)
@@ -400,4 +407,5 @@ if query:
     )
     with st.chat_message("ai"):
         result = chain.invoke(query)
+        print(result)
         st.markdown(result.content)

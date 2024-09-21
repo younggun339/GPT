@@ -101,12 +101,17 @@ st.title("PrivateGPT")
 
 st.markdown(
     """
-Welcome!
-            
-Use this chatbot to ask questions to an AI about your files!
 
-Upload your files on the sidebar.
-"""
+    ### 🤖 개인 GPT 봇
+
+    해당 섹션은 개발자가 개인 챗봇 사용 용도입니다.
+    
+    사이드바에 다음 정보를 입력하세요:
+    1. 📄 파일 업로드
+    2. 💡 원하는 모델 선택
+
+    개인만의 GPT를 써보시는 건 어떠세요?
+    """
 )
 
 with st.sidebar:
