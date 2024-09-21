@@ -8,7 +8,15 @@ from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import streamlit as st
 
-html2text_transformer = Html2TextTransformer()
+
+import pandas as pd
+import umap.umap_ as umap
+from tqdm import tqdm
+tqdm.pandas()
+from Bio import Entrez
+from sklearn.cluster import KMeans
+import datetime
+
 
 llm = ChatOpenAI(
     temperature=0.1,
@@ -103,21 +111,6 @@ def choose_answer(inputs):
     )
 
 
-def parse_page(soup):
-    header = soup.find("header")
-    footer = soup.find("footer")
-    if header:
-        header.decompose()
-    if footer:
-        footer.decompose()
-    return (
-        str(soup.get_text())
-        .replace("\n", " ")
-        .replace("\xa0", " ")
-        .replace("CloseSearch Submit Blog", "")
-    )
-
-
 @st.cache_data(show_spinner="Loading website...")
 def load_website(url):
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
@@ -126,12 +119,84 @@ def load_website(url):
     )
     loader = SitemapLoader(
         url,
-        parsing_function=parse_page,
     )
     loader.requests_per_second = 2
     docs = loader.load_and_split(text_splitter=splitter)
     vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
     return vector_store.as_retriever()
+
+@st.cache_data(show_spinner="Searching Document....")
+def search_pubmed(keyword, retmax=10):
+    handle = Entrez.esearch(db="pubmed", term=keyword, retmax=retmax)
+    record = Entrez.read(handle)
+    handle.close()
+
+    # Fetch the records for the retrieved IDs
+    id_list = record["IdList"]
+    fetch_handle = Entrez.efetch(db="pubmed", id=id_list, rettype="medline", retmode="text")
+    records = fetch_handle.read()
+    fetch_handle.close()
+
+    # Parse the records and extract the desired information
+    pubmed_records = records.split("\n\n")
+    data = []
+    for record in pubmed_records:
+        record_dict = {}
+        lines = record.split("\n")
+        part_of_abstract = False
+        part_of_title = False
+        for line in lines:
+            if part_of_abstract == True:
+                if line[0] == " ":
+                    record_dict["Abstract"] += " " + line[6:].strip()
+                else:
+                    part_of_abstract = False
+            elif part_of_title == True:
+                if line[0] == " ":
+                    record_dict["Title"] += " " + line[6:].strip()
+                else:
+                    part_of_title = False
+            elif line.startswith("PMID"):
+                record_dict["PMID"] = line[6:].strip()
+            elif line.startswith("TI"):
+                record_dict["Title"] = line[6:].strip()
+                part_of_title = True
+            elif line.startswith("AB"):
+                record_dict["Abstract"] = line[6:].strip()
+                part_of_abstract = True
+            elif line.startswith("DP"):
+                record_dict["Year"] = line[6:10]
+            elif "Author" not in record_dict and line.startswith("FAU"):
+                fau = line[6:].strip().split(', ')
+                if len(fau) > 1:
+                    record_dict["Author"] = f"{fau[1]} {fau[0]}"
+                else:
+                    record_dict["Author"] = line[6:].strip()
+            elif line.startswith("TA"):
+                record_dict["Journal"] = line[6:]
+        if all(k in record_dict for k in ("Abstract", "PMID", "Title", "Year", "Author", "Journal")):
+            data.append(record_dict)
+
+    return data
+
+keyword = "Medical Education ChatGPT"
+search_results = search_pubmed(keyword, 30)
+df = pd.DataFrame(search_results)
+# df
+
+summary_prompt = ChatPromptTemplate.from_messages([("system", """
+You are a research assistant, and will be provided with an abstract of a scientific paper. Write a concise 2-line summary of the main findings.
+"""),("user", """{context}
+""")])
+
+@st.cache_data(show_spinner="Genarating Summary...")
+def get_summary(prompt):
+    summary_chain = summary_prompt | llm
+    return summary_chain.invoke({"context" : prompt})
+
+
+df['Summary'] = df['Abstract'].progress_apply(get_summary)
+df
 
 
 st.set_page_config(
