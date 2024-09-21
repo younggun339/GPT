@@ -259,6 +259,7 @@ def cluster(k, u, df):
     kmeans.fit(u)
     labels = kmeans.labels_
     df['Group'] = labels
+    print(f"cluster df : {df}")
     return df
 
 topic_prompt = ChatPromptTemplate.from_messages([
@@ -268,21 +269,23 @@ topic_prompt = ChatPromptTemplate.from_messages([
 
 @st.cache_data(show_spinner="Getting Topic...")
 def get_topic(_df, k):
+    k = int(k)
     data = embedding_summary(_df)
     u = reduce_demension(data)
     last_df = cluster(k, u, data)
     topic_chain = topic_prompt | llm
-
- # DataFrame을 문자열로 변환
-    df_str = last_df.to_string()
-    print("df_str:", df_str[:100])
-
-    # topic_chain에 DataFrame 문자열 전달
-    topics_str = topic_chain.invoke({"context" : df_str})
-    print(f"topics_str : {topics_str}")
+    print(f"df : {last_df}")
+    
+    topics = []
+    for i in range(k):
+        abstracts = ""
+        for _, row in last_df[last_df['Group']==i].iterrows():
+            abstracts += f"- {row['Summary'].content.strip()}\n"
+        topic_comment = topic_chain.invoke({"context" : abstracts})
+        topic = [topic.replace("topic: ", "").strip() for topic in topic_comment.content.split('\n') if topic.strip()]
+        topics.append(topic)
+    
     # "topic: " 접두사 제거 및 리스트로 변환
-    topics = [topic.replace("topic: ", "").strip() for topic in topics_str.content.split('\n') if topic.strip()]
-
     return last_df, topics
 
 def output_parser(df, topics):
@@ -354,7 +357,10 @@ if keyword:
         if start:
             df = get_summary(keyword, number)
             last_df, topics = get_topic(df, k)
+            print(last_df)
+            print(topics)
             parsed_output = output_parser(last_df, topics)
+            print(parsed_output)
              # Streamlit을 사용하여 결과 표시
             for group in parsed_output:
                 st.subheader(f"Group {group['Group']}: {group['Topic']}")
