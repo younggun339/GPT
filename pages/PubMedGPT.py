@@ -235,11 +235,7 @@ def embedding_summary(df):
     embeddings = OpenAIEmbeddings()
     
     def get_embedding_topic(text):
-        print(f"text : {text}")
-        print(type(text))
-        result = embeddings.embed_query(text.content)
-        print(f"result : result")
-        return result
+        return embeddings.embed_query(text.content)
 
     # DataFrame의 'Summary' 열에 임베딩 적용
     if 'Embeddings_Sum' not in df.columns:
@@ -258,7 +254,7 @@ def reduce_demension(df):
 
 @st.cache_data(show_spinner="Clustering...")
 def cluster(k, u, df):
-    k = 3
+    k = int(k) 
     kmeans = KMeans(n_clusters=k, n_init=10)
     kmeans.fit(u)
     labels = kmeans.labels_
@@ -279,12 +275,13 @@ def get_topic(_df, k):
 
  # DataFrame을 문자열로 변환
     df_str = last_df.to_string()
+    print("df_str:", df_str[:100])
 
     # topic_chain에 DataFrame 문자열 전달
-    topics_str = topic_chain.invoke(df_str)
-
+    topics_str = topic_chain.invoke({"context" : df_str})
+    print(f"topics_str : {topics_str}")
     # "topic: " 접두사 제거 및 리스트로 변환
-    topics = [topic.replace("topic: ", "").strip() for topic in topics_str.split('\n') if topic.strip()]
+    topics = [topic.replace("topic: ", "").strip() for topic in topics_str.content.split('\n') if topic.strip()]
 
     return last_df, topics
 
@@ -301,7 +298,7 @@ def output_parser(df, topics):
             paper = {
                 'Author': row['Author'],
                 'Year': row['Year'],
-                'Summary': row['Summary'].strip()
+                'Summary': row['Summary'].content.strip()
             }
             group_data['Papers'].append(paper)
         output.append(group_data)
