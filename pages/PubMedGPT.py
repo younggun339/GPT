@@ -107,22 +107,8 @@ def choose_answer(inputs):
     )
 
 
-# @st.cache_data(show_spinner="Loading website...")
-# def load_website(url):
-#     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-#         chunk_size=1000,
-#         chunk_overlap=200,
-#     )
-#     loader = SitemapLoader(
-#         url,
-#     )
-#     loader.requests_per_second = 2
-#     docs = loader.load_and_split(text_splitter=splitter)
-#     vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
-#     return vector_store.as_retriever()
-
 @st.cache_data(show_spinner="Creating vector store...")
-def create_vector_store(df):
+def create_vector_store_QA(df):
     # OpenAI 임베딩 함수 정의
     embeddings = OpenAIEmbeddings()
     
@@ -130,9 +116,9 @@ def create_vector_store(df):
         return embeddings.embed_query(text)
 
     # DataFrame의 'Summary' 열에 임베딩 적용
-    if 'Embeddings' not in df.columns:
+    if 'Embeddings_Ab' not in df.columns:
         with st.spinner("Generating embeddings..."):
-            df['Embeddings'] = df['Abstract'].progress_apply(get_embedding)
+            df['Embeddings_Ab'] = df['Abstract'].progress_apply(get_embedding)
         st.success("Embeddings generated successfully!")
 
     # 텍스트 분할기 설정
@@ -150,7 +136,7 @@ def create_vector_store(df):
 
     # FAISS 벡터 저장소 생성
     vector_store = FAISS.from_embeddings(
-        text_embeddings=[(doc.page_content, doc.metadata['Embeddings']) for doc in docs],
+        text_embeddings=[(doc.page_content, doc.metadata['Embeddings_Ab']) for doc in docs],
         embedding=embeddings,
         metadatas=[doc.metadata for doc in docs]
     )
@@ -241,15 +227,79 @@ def get_summary(keyword, numbers):
 # df
 
 
+@st.cache_data(show_spinner="Embedding summary...")
+def embedding_summary(df):
+    # OpenAI 임베딩 함수 정의
+    embeddings = OpenAIEmbeddings()
+    
+    def get_embedding_topic(text):
+        return embeddings.embed_query(text)
+
+    # DataFrame의 'Summary' 열에 임베딩 적용
+    if 'Embeddings_Sum' not in df.columns:
+        with st.spinner("Generating embeddings..."):
+            df['Embeddings_Sum'] = df['Summary'].progress_apply(get_embedding_topic)
+        st.success("Embeddings generated successfully!")
+
+
+    return df
+
+@st.cache_data(show_spinner="Reduce demension...")
+def reduce_demension(df):
+    reducer = umap.UMAP(n_neighbors=3, n_components=3)
+    u = reducer.fit_transform(df['Embeddings_Sum'].tolist())
+    return u
+
+@st.cache_data(show_spinner="Clustering...")
+def cluster(k, u, df):
+    k = 3
+    kmeans = KMeans(n_clusters=k, n_init=10)
+    kmeans.fit(u)
+    labels = kmeans.labels_
+    df['Group'] = labels
+    return df
+
 topic_prompt = ChatPromptTemplate.from_messages([
     ("system","""You are a research assistant, and will be provided with a list of documents.\nBased on the information extract a single short but highly desriptive topic label. Answer with 1 topic label and make it less than 8 words. Make sure it is in the following format:\ntopic: <topic label>"""),
     ("user", """{context}""")
 ])
 
 @st.cache_data(show_spinner="Getting Topic...")
-def get_topic(_df):
-    topic_chain = {"context" : create_vector_store }| topic_prompt | llm
-    return topic_chain.invoke(_df)
+def get_topic(_df, k):
+    data = embedding_summary(_df)
+    u = reduce_demension(data)
+    last_df = cluster(k, u, data)
+    topic_chain = topic_prompt | llm
+
+ # DataFrame을 문자열로 변환
+    df_str = last_df.to_string()
+
+    # topic_chain에 DataFrame 문자열 전달
+    topics_str = topic_chain.invoke(df_str)
+
+    # "topic: " 접두사 제거 및 리스트로 변환
+    topics = [topic.replace("topic: ", "").strip() for topic in topics_str.split('\n') if topic.strip()]
+
+    return last_df, topics
+
+def output_parser(df, topics):
+    output = []
+    for i, topic in enumerate(topics):
+        group_df = df[df['Group'] == i]
+        group_data = {
+            'Topic': topic,
+            'Group': i,
+            'Papers': []
+        }
+        for _, row in group_df.iterrows():
+            paper = {
+                'Author': row['Author'],
+                'Year': row['Year'],
+                'Summary': row['Summary'].strip()
+            }
+            group_data['Papers'].append(paper)
+        output.append(group_data)
+    return output
 
 # topics = []
 # for i in range(k):
@@ -284,21 +334,48 @@ with st.sidebar:
         "Write down a number",
         placeholder="ex) 5, 10, 15..."
     )
+    k = st.text_input("Write down a clustering number",
+                            placeholder="ex) 1, 2...")
 
 
 if keyword:
     # df = get_summary(keyword, number)
+    summary_tab, qa_tab = st.tabs(
+        [
+            "Summary",
+            "Q&A",
+        ]
+    )
+    with summary_tab:
+        start = st.button("Genrate summary")
+        if start:
+            search_results = search_pubmed(keyword, number)
+            df = pd.DataFrame(search_results)
+            last_df, topics = get_topic(df, k)
+            parsed_output = output_parser(last_df, topics)
+             # Streamlit을 사용하여 결과 표시
+            for group in parsed_output:
+                st.subheader(f"Group {group['Group']}: {group['Topic']}")
+                for paper in group['Papers']:
+                    st.write(f"- ({paper['Author']}, {paper['Year']}) {paper['Summary']}")
+                st.write("---")
+
+    with qa_tab:
+        st.button("아무거나.")
+    # search_results = search_pubmed(keyword, number)
+    # df = pd.DataFrame(search_results)
+    # retriever = create_vector_store(df)
+query = st.text_input("Ask a question to the website.")
+if query: 
     search_results = search_pubmed(keyword, number)
     df = pd.DataFrame(search_results)
-    retriever = create_vector_store(df)
-    query = st.text_input("Ask a question to the website.")
-    if query: 
-        chain = ({
-            "docs": retriever,
-            "question" : RunnablePassthrough(),
-        }|RunnableLambda(get_answers)
-        | RunnableLambda(choose_answer)
-        )
-        with st.chat_message("ai"):
-            result = chain.invoke(query)
-            st.markdown(result.content)
+    retriever = create_vector_store_QA(df)
+    chain = ({
+        "docs": retriever,
+        "question" : RunnablePassthrough(),
+    }|RunnableLambda(get_answers)
+    | RunnableLambda(choose_answer)
+    )
+    with st.chat_message("ai"):
+        result = chain.invoke(query)
+        st.markdown(result.content)

@@ -302,7 +302,7 @@ else:
                     st.success(f"Correct! {selected_answer['comment']}")
                 else:
                     # Show error message with the comment for the incorrect answer and show the correct answer
-                    st.error(f"Wrong! 정답은 {correct_answer['answer']}입니다. {selected_answer['comment']}")
+                    st.error(f"Wrong! correct answer is {correct_answer['answer']}. {selected_answer['comment']}")
             
             # if {"answer": value, "correct": True} in question["answers"]:
             #     st.success("Correct!")
