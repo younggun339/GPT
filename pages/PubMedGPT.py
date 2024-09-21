@@ -99,14 +99,10 @@ def choose_answer(inputs):
     answers = inputs["answers"]
     question = inputs["question"]
     choose_chain = choose_prompt | llm
-    condensed = "\n\n".join(
-        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
-        for answer in answers
-    )
     return choose_chain.invoke(
         {
             "question": question,
-            "answers": condensed,
+            "answers": answers,
         }
     )
 
@@ -136,7 +132,7 @@ def create_vector_store(df):
     # DataFrame의 'Summary' 열에 임베딩 적용
     if 'Embeddings' not in df.columns:
         with st.spinner("Generating embeddings..."):
-            df['Embeddings'] = df['Summary'].progress_apply(get_embedding)
+            df['Embeddings'] = df['Abstract'].progress_apply(get_embedding)
         st.success("Embeddings generated successfully!")
 
     # 텍스트 분할기 설정
@@ -146,7 +142,7 @@ def create_vector_store(df):
     )
 
     # DataFrame을 문서로 변환
-    loader = DataFrameLoader(df, page_content_column="Summary")
+    loader = DataFrameLoader(df, page_content_column="Abstract")
     documents = loader.load()
 
     # 문서 분할
@@ -263,14 +259,14 @@ def get_topic(_df):
 #   topics.append(get_topic(abstracts))
 
 st.set_page_config(
-    page_title="SiteGPT",
+    page_title="PubMedGPT",
     page_icon="🖥️",
 )
 
 
 st.markdown(
     """
-    # SiteGPT
+    # PubMedGPT
             
     Ask questions about the content of a website.
             
@@ -280,27 +276,29 @@ st.markdown(
 
 
 with st.sidebar:
-    url = st.text_input(
-        "Write down a URL",
-        placeholder="https://example.com",
+    keyword = st.text_input(
+        "Write down a Keyword",
+        placeholder="ex) DNA, MS...",
+    )
+    number = st.text_input(
+        "Write down a number",
+        placeholder="ex) 5, 10, 15..."
     )
 
 
-if url:
-    if ".xml" not in url:
-        with st.sidebar:
-            st.error("Please write down a Sitemap URL.")
-    else:
-        retriever = load_website(url)
-        query = st.text_input("Ask a question to the website.")
-        if query:
-            chain = (
-                {
-                    "docs": retriever,
-                    "question": RunnablePassthrough(),
-                }
-                | RunnableLambda(get_answers)
-                | RunnableLambda(choose_answer)
-            )
+if keyword:
+    # df = get_summary(keyword, number)
+    search_results = search_pubmed(keyword, number)
+    df = pd.DataFrame(search_results)
+    retriever = create_vector_store(df)
+    query = st.text_input("Ask a question to the website.")
+    if query: 
+        chain = ({
+            "docs": retriever,
+            "question" : RunnablePassthrough(),
+        }|RunnableLambda(get_answers)
+        | RunnableLambda(choose_answer)
+        )
+        with st.chat_message("ai"):
             result = chain.invoke(query)
-            st.markdown(result.content.replace("$", "\$"))
+            st.markdown(result.content)
