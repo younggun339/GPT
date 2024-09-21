@@ -1,4 +1,4 @@
-from langchain.document_loaders import SitemapLoader, AsyncChromiumLoader
+from langchain.document_loaders import DataFrameLoader
 from langchain.document_transformers import Html2TextTransformer
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -111,19 +111,56 @@ def choose_answer(inputs):
     )
 
 
-@st.cache_data(show_spinner="Loading website...")
-def load_website(url):
+# @st.cache_data(show_spinner="Loading website...")
+# def load_website(url):
+#     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+#         chunk_size=1000,
+#         chunk_overlap=200,
+#     )
+#     loader = SitemapLoader(
+#         url,
+#     )
+#     loader.requests_per_second = 2
+#     docs = loader.load_and_split(text_splitter=splitter)
+#     vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+#     return vector_store.as_retriever()
+
+@st.cache_data(show_spinner="Creating vector store...")
+def create_vector_store(df):
+    # OpenAI 임베딩 함수 정의
+    embeddings = OpenAIEmbeddings()
+    
+    def get_embedding(text):
+        return embeddings.embed_query(text)
+
+    # DataFrame의 'Summary' 열에 임베딩 적용
+    if 'Embeddings' not in df.columns:
+        with st.spinner("Generating embeddings..."):
+            df['Embeddings'] = df['Summary'].progress_apply(get_embedding)
+        st.success("Embeddings generated successfully!")
+
+    # 텍스트 분할기 설정
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=800,
+        chunk_overlap=150,
     )
-    loader = SitemapLoader(
-        url,
+
+    # DataFrame을 문서로 변환
+    loader = DataFrameLoader(df, page_content_column="Summary")
+    documents = loader.load()
+
+    # 문서 분할
+    docs = splitter.split_documents(documents)
+
+    # FAISS 벡터 저장소 생성
+    vector_store = FAISS.from_embeddings(
+        text_embeddings=[(doc.page_content, doc.metadata['Embeddings']) for doc in docs],
+        embedding=embeddings,
+        metadatas=[doc.metadata for doc in docs]
     )
-    loader.requests_per_second = 2
-    docs = loader.load_and_split(text_splitter=splitter)
-    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+
     return vector_store.as_retriever()
+
 
 @st.cache_data(show_spinner="Searching Document....")
 def search_pubmed(keyword, retmax=10):
@@ -179,9 +216,9 @@ def search_pubmed(keyword, retmax=10):
 
     return data
 
-keyword = "Medical Education ChatGPT"
-search_results = search_pubmed(keyword, 30)
-df = pd.DataFrame(search_results)
+# keyword = "Medical Education ChatGPT"
+# search_results = search_pubmed(keyword, 30)
+# df = pd.DataFrame(search_results)
 # df
 
 summary_prompt = ChatPromptTemplate.from_messages([("system", """
@@ -190,14 +227,40 @@ You are a research assistant, and will be provided with an abstract of a scienti
 """)])
 
 @st.cache_data(show_spinner="Genarating Summary...")
-def get_summary(prompt):
+def get_summary(keyword, numbers):
+    search_results = search_pubmed(keyword, numbers)
+    df = pd.DataFrame(search_results)
     summary_chain = summary_prompt | llm
-    return summary_chain.invoke({"context" : prompt})
+   # 각 Abstract를 요약하는 함수
+    def summarize_abstract(abstract):
+        return summary_chain.invoke({"abstract": abstract})
+    
+    # tqdm을 사용한 progress_apply로 각 Abstract 요약
+    df['Summary'] = df['Abstract'].progress_apply(summarize_abstract)
+    
+    return df
 
 
-df['Summary'] = df['Abstract'].progress_apply(get_summary)
-df
+# df['Summary'] = df['Abstract'].progress_apply(get_summary)
+# df
 
+
+topic_prompt = ChatPromptTemplate.from_messages([
+    ("system","""You are a research assistant, and will be provided with a list of documents.\nBased on the information extract a single short but highly desriptive topic label. Answer with 1 topic label and make it less than 8 words. Make sure it is in the following format:\ntopic: <topic label>"""),
+    ("user", """{context}""")
+])
+
+@st.cache_data(show_spinner="Getting Topic...")
+def get_topic(_df):
+    topic_chain = {"context" : create_vector_store }| topic_prompt | llm
+    return topic_chain.invoke(_df)
+
+# topics = []
+# for i in range(k):
+#   abstracts = ""
+#   for _, row in df[df['Group']==i].iterrows():
+#     abstracts += f"- {row['Summary'].strip()}\n"
+#   topics.append(get_topic(abstracts))
 
 st.set_page_config(
     page_title="SiteGPT",
