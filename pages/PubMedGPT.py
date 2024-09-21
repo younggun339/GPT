@@ -236,7 +236,10 @@ def embedding_summary(df):
     
     def get_embedding_topic(text):
         print(f"text : {text}")
-        return embeddings.embed_query(text)
+        print(type(text))
+        result = embeddings.embed_query(text.content)
+        print(f"result : result")
+        return result
 
     # DataFrame의 'Summary' 열에 임베딩 적용
     if 'Embeddings_Sum' not in df.columns:
