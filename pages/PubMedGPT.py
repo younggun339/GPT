@@ -215,10 +215,12 @@ def get_summary(keyword, numbers):
     summary_chain = summary_prompt | llm
    # 각 Abstract를 요약하는 함수
     def summarize_abstract(abstract):
-        return summary_chain.invoke({"abstract": abstract})
+        return summary_chain.invoke({"context": abstract})
     
     # tqdm을 사용한 progress_apply로 각 Abstract 요약
+    print(df['Abstract'])
     df['Summary'] = df['Abstract'].progress_apply(summarize_abstract)
+    print(df['Summary'])
     
     return df
 
@@ -233,6 +235,7 @@ def embedding_summary(df):
     embeddings = OpenAIEmbeddings()
     
     def get_embedding_topic(text):
+        print(f"text : {text}")
         return embeddings.embed_query(text)
 
     # DataFrame의 'Summary' 열에 임베딩 적용
@@ -349,8 +352,7 @@ if keyword:
     with summary_tab:
         start = st.button("Genrate summary")
         if start:
-            search_results = search_pubmed(keyword, number)
-            df = pd.DataFrame(search_results)
+            df = get_summary(keyword, number)
             last_df, topics = get_topic(df, k)
             parsed_output = output_parser(last_df, topics)
              # Streamlit을 사용하여 결과 표시
