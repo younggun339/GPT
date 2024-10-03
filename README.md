@@ -20,6 +20,3 @@
 
 *이 포트폴리오는 지속적으로 업데이트되고 있습니다. 새로운 기능과 프로젝트를 기대해 주세요!*
 
-
-배포 주소 : https://8rewrsvceldhggszmwsqjr.streamlit.app/
-PubMedGPT가 안 된다면, 좀더 많은 문서를 검색해보세요.
